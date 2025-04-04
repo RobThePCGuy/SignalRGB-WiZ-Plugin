@@ -1,373 +1,504 @@
-export function Name() { return "WIZ Interface"; }
-export function Version() { return "1.0.0"; }
-export function VendorId() { return    0x0; }
-export function ProductId() { return   0x0; }
+export function Name() { return "WiZ Interface"; }
+export function Version() { return "1.2.0"; }
+export function VendorId() { return 0x0; }
+export function ProductId() { return 0x0; }
 export function Type() { return "network"; }
-export function Publisher() { return "GreenSky Productions"; }
+export function Publisher() { return "RobThePCGuy Enhanced (Previously GreenSky Productions)"; }
 export function Size() { return [1, 1]; }
-export function DefaultPosition() {return [75, 70]; }
-export function DefaultScale(){return 10.0;}
-/* global
-controller:readonly
-discovery: readonly
-TurnOffOnShutdown:readonly
-variableLedCount:readonly
-*/
-
-//Code Example from https://gitlab.com/signalrgb/Govee/-/blob/main/Govee.js
-//Info about the Protocol of WIZ from https://github.com/SRGDamia1/openhab2-addons/blob/025b9739935b6ea87ecba6cf02c417d0434873e1/bundles/org.openhab.binding.wizlighting/src/main/java/org/openhab/binding/wizlighting/internal/enums/WizLightingMethodType.java
-
-export function ControllableParameters() {
-	return [
-		{"property":"AutoStartStream", "group":"settings", "label":"Automatically Start Stream", "type":"boolean", "default":"false"},
-		{"property":"forcedColor", "group":"lighting", "label":"Forced Color", "min":"0", "max":"255", "type":"color", "default":"#009bde"},
-		{"property":"minBrightniss", "group":"lighting", "label":"Minimal Brightniss", "min":"1", "max":"100", "type":"hue", "default":"10"},
-		{"property":"dimmColor", "group":"lighting", "label":"Default Color when dimmed", "min":"0", "max":"255", "type":"color", "default":"#010101"},
-		{"property":"forceColor", "group":"settings", "label":"Force Color", "type":"boolean", "default":"false"},
-
-	];
-}
-
-export function DefaultComponentBrand() { return "WIZ";}
-
+export function DefaultPosition() { return [75, 70]; }
+export function DefaultScale() { return 10.0; }
+export function DefaultComponentBrand() { return "WiZ"; }
 export function SubdeviceController() { return false; }
 
-/** @type {WIZProtcol} */
-let wizpro;
-let ledCount = 4;
-let ledNames = [];
-let ledPositions = [];
-let subdevices = [];
-let lastBroadcast = 0;
-/*
-class WIZController{
-	constructor(controller) {
-		this.mac = controller.mac;
-		this.hostname = controller.hostname;
-		this.name = controller.name;
-		this.ip = controller.ip;
-		this.port = controller.port;
-		this.arch = controller.arch;
-		this.streamingPort = controller.streamingPort;
-		this.deviceledcount = controller.deviceledcount;
-	}
+const MIN_WiZ_BRIGHTNESS = 10;
+const MAX_WiZ_BRIGHTNESS = 100;
+const MIN_WiZ_TEMPERATURE = 2200;
+const MAX_WiZ_TEMPERATURE = 6500;
+const DEFAULT_WiZ_TEMPERATURE = 4000;
+const DEFAULT_DISCOVERY_INTERVAL_S = 60;
+const DEFAULT_LIVENESS_CHECK_S = 30;
 
-	SetupChannel() {
-		device.SetLedLimit(this.deviceledcount);
-		device.addChannel(this.name, this.deviceledcount);
-	}
-
-
-	SendColorPackets(){
-		
-	}
-}
-*/
-export function onvariableLedCountChanged(){
-
+export function ControllableParameters() {
+    return [
+        { "property": "AutoStartStream", "group": "settings", "label": "Automatically Control on Startup", "type": "boolean", "default": true },
+        { "property": "discoveryIntervalSeconds", "group": "discovery", "label": "Discovery Broadcast Interval (seconds)", "type": "number", "min": 10, "max": 300, "step": 5, "default": DEFAULT_DISCOVERY_INTERVAL_S },
+        { "property": "livenessCheckSeconds", "group": "discovery", "label": "Device Liveness Check Interval (seconds)", "type": "number", "min": 5, "max": 120, "step": 5, "default": DEFAULT_LIVENESS_CHECK_S },
+        { "property": "forceColor", "group": "settings", "label": "Force Color (Overrides SignalRGB)", "type": "boolean", "default": false },
+        { "property": "forcedColor", "group": "lighting", "label": "Forced Color", "type": "color", "default": "#009bde" },
+        { "property": "minBrightness", "group": "lighting", "label": "Minimum Brightness (%)", "min": "10", "max": "100", "type": "number", "default": "10" },
+        { "property": "dimmColor", "group": "lighting", "label": "Color When SignalRGB is Black/Dim", "type": "color", "default": "#101010" },
+        { "property": "targetTemperature", "group": "lighting", "label": "Target White Temperature (K)", "type": "number", "min": MIN_WiZ_TEMPERATURE, "max": MAX_WiZ_TEMPERATURE, "step": 50, "default": DEFAULT_WiZ_TEMPERATURE },
+    ];
 }
 
+let wizProtocol = null;
+let isInitialized = false;
 
-export function Initialize(){
-	device.addFeature("udp");
-	device.setName(`WIZ ${controller.modelName} Room: ${controller.roomId}`);
-	if(controller.wiztype){
-		//device.setIcon(controller.wiztype.imageUrl);
-	}	
-
-	device.addProperty({"property": "variableLedCount", label: "Leds", "type": "number", "min": 1, "max": 1, default: 1});
-	if(device.isTW){
-		device.removeProperty("forcedColor");
-		device.removeProperty("forceColor");
-	}
-	
-	device.setSize(1,1);
-	device.setControllableLeds(["LED 1"],[[0,0]]);
-	device.log(JSON.stringify(controller));
-	device.log(controller.ip);
-	device.log(controller.port);
-	device.log(JSON.stringify(device));
-	wizpro = new WIZProtcol(controller.ip,controller.port);
-
-
+export function Initialize() {
+    device.log(`Initializing WiZ Device: ${controller.id} (${controller.modelName || 'Unknown Model'}) at IP: ${controller.ip}`);
+    device.addFeature("udp");
+    let deviceName = `WiZ ${controller.modelName ? controller.modelName : 'Device'}`;
+    if (controller.roomId) {
+        deviceName += ` (Room: ${controller.roomId})`;
+    }
+    deviceName += ` (${controller.id.substring(controller.id.length - 4)})`;
+    device.setName(deviceName);
+    if (controller.wizType && controller.wizType.imageUrl) {
+        device.setIconUrl(controller.wizType.imageUrl);
+    } else {
+         device.setIconUrl(ImageUrl());
+    }
+    device.setControllableLeds(["LED 1"], [[0, 0]]);
+    device.setSize([1, 1]);
+    if (controller.isTW && !controller.isRGB) {
+        device.removeProperty("forcedColor");
+        device.removeProperty("forceColor");
+        device.removeProperty("dimmColor");
+        device.log("Device is Tunable White only. RGB-specific properties removed.");
+    } else {
+        device.removeProperty("targetTemperature");
+    }
+    try {
+        wizProtocol = new WizProtocol(controller.ip, controller.port);
+    } catch (e) {
+        device.log(`Error creating WizProtocol: ${e}`);
+        return;
+    }
+    isInitialized = true;
+    device.log(`Initialization complete for ${deviceName}. AutoStart: ${AutoStartStream}`);
+    if (AutoStartStream) {
+        device.log("AutoStartStream enabled. Sending initial state.");
+        Render();
+    } else {
+        device.log("AutoStartStream disabled. Device will wait for SignalRGB data or manual interaction.");
+    }
 }
 
-
-export function Render(){
-	if(AutoStartStream){
-		if(forceColor !== undefined){
-			const color = forceColor ? device.createColorArray(forcedColor, 1, "Inline") : device.color(0,0);
-			wizpro.setPilot(color[0],color[1],color[2]);
-		}
-		else{
-			const color = device.color(0,0);
-			wizpro.setPilot(color[0],color[1],color[2]);
-		}
-		
-		
-	}
-	
-		
+export function Render() {
+    if (!isInitialized || !wizProtocol) {
+        return;
+    }
+    if (!AutoStartStream) {
+        return;
+    }
+    let r, g, b, brightnessPercent;
+    if (forceColor && controller.isRGB) {
+        [r, g, b] = device.hexToRgb(forcedColor);
+        brightnessPercent = device.getBrightness();
+    } else {
+        [r, g, b] = device.color(0, 0);
+        brightnessPercent = device.getBrightness();
+    }
+    let wizBrightness = Math.max(MIN_WiZ_BRIGHTNESS, minBrightness, Math.round(brightnessPercent
+    wizBrightness = Math.min(MAX_WiZ_BRIGHTNESS, wizBrightness);
+    const isSignalDark = r < 5 && g < 5 && b < 5;
+    if (isSignalDark && controller.isRGB && !forceColor) {
+        [r, g, b] = device.hexToRgb(dimmColor);
+        wizBrightness = Math.max(MIN_WiZ_BRIGHTNESS, minBrightness);
+        wizProtocol.setPilotRgb(r, g, b, wizBrightness);
+    } else if (controller.isTW && !controller.isRGB) {
+        const temp = Math.max(MIN_WiZ_TEMPERATURE, Math.min(MAX_WiZ_TEMPERATURE, targetTemperature));
+        wizProtocol.setPilotTw(temp, wizBrightness);
+    } else if (controller.isRGB) {
+        wizProtocol.setPilotRgb(r, g, b, wizBrightness);
+    } else {
+         device.log(`Setting Dimmable-only device: Brightness=${wizBrightness}`);
+         wizProtocol.setPilotStateAndBrightness(true, wizBrightness);
+    }
 }
 
-export function Shutdown(suspend){
-
+export function Shutdown(suspend) {
+    device.log(`Shutdown called (suspend: ${suspend}) for ${controller.id}`);
+    if (wizProtocol) {
+        if (TurnOffOnShutdown && !suspend && AutoStartStream) {
+            device.log("Turning off device due to TurnOffOnShutdown setting enabled and not suspending.");
+            wizProtocol.setPilotState(false);
+        } else {
+            device.log(`Leaving device in current state (TurnOffOnShutdown: ${TurnOffOnShutdown}, Suspending: ${suspend}, AutoStart: ${AutoStartStream})`);
+        }
+    }
+    wizProtocol = null;
+    isInitialized = false;
+    device.log(`Shutdown complete for ${controller.id}`);
 }
 
-
-/** @typedef { {productName: string, imageUrl: string, sku: string, state: number, supportRazer: boolean, supportFeast: boolean, ledCount: number, hasVariableLedCount?: boolean} } WIZDevice */
-/** @type {Object.<string, WIZDeviceLibrary>} */
-const WIZDeviceLibrary = {
-	"ESP03_SHRGB3_01ABI": {
-		productName: "WRGB LED Strip",
-		imageUrl: "https://www.assets.signify.com/is/image/Signify/WiFi-BLE-LEDstrip-2M-1600lm-startkit-SPP?&wid=200&hei=200&qlt=100",
-		sku: 27082,
-		state: 1,
-		supportRGB: true,
-		supportDimming: true,
-		supportWhiteColor: true,
-		supportCostumLedCount: false,
-		ledCount: 1
-	},
-	127372: {
-		productName: "W100 WRGB Light Bulb",
-		imageUrl: "https://www.assets.signify.com/is/image/PhilipsLighting/Wi_Fi_BLE_100W_A67_E27_922_65_RGB_1PF_6_S-SPP?wid=200&hei=200&qlt=100",
-		sku: 127372,
-		state: 1,
-		supportRGB: true,
-		supportDimming: true,
-		supportWhiteColor: true,
-		supportCostumLedCount: false,
-		ledCount: 1
-	}
-	
+const WiZDeviceLibrary = {
+    "ESP01_SHDW_01":    { productName: "WiZ Smart Plug", imageUrl: "https://images.wizconnected.com/pri/h01/h1a/9222662414366.png?build=16", supportRGB: false, supportDimming: false, supportWhiteColor: false, ledCount: 0 },
+    "ESP03_SHRGB3_01":  { productName: "WiZ Color LED Strip", imageUrl: "https://images.wizconnected.com/pri/h6b/h90/9223585972254.png?build=16", supportRGB: true, supportDimming: true, supportWhiteColor: true, ledCount: 1 },
+    "ESP06_SHRGB_01":   { productName: "WiZ Color A60 E27", imageUrl: "https://images.wizconnected.com/pri/h7c/h2a/9222660972574.png?build=16", supportRGB: true, supportDimming: true, supportWhiteColor: true, ledCount: 1 },
+    "ESP15_SHTW_01I":   { productName: "WiZ Tunable White A60 E27", imageUrl: "https://images.wizconnected.com/pri/hfb/hf8/9222661849118.png?build=16", supportRGB: false, supportDimming: true, supportWhiteColor: true, ledCount: 1 },
+    "ESP20_SHRGBW_01B": { productName: "WiZ Squire Table Lamp", imageUrl: "https://images.wizconnected.com/pri/h94/h8b/9222663299102.png?build=16", supportRGB: true, supportDimming: true, supportWhiteColor: true, ledCount: 1 },
+    "ESP17_SHTW1C_01":  { productName: "WiZ Tunable White Filament E27", imageUrl: "https://images.wizconnected.com/pri/h53/h14/9222662832158.png?build=16", supportRGB: false, supportDimming: true, supportWhiteColor: true, ledCount: 1 },
+    "ESP22_SHRGBW_01":  { productName: "WiZ Portable Hero Lamp", imageUrl: "https://images.wizconnected.com/pri/hf6/h51/9222663364638.png?build=16", supportRGB: true, supportDimming: true, supportWhiteColor: true, ledCount: 1 },
+    "ESP25_SHRGBW_01":  { productName: "WiZ Color GU10 Spot", imageUrl: "https://images.wizconnected.com/pri/h78/h31/9222660907038.png?build=16", supportRGB: true, supportDimming: true, supportWhiteColor: true, ledCount: 1 },
+    "ESP26_SHTW_01":    { productName: "WiZ Tunable White GU10 Spot", imageUrl: "https://images.wizconnected.com/pri/h5e/h70/9222661554100.png?build=16", supportRGB: false, supportDimming: true, supportWhiteColor: true, ledCount: 1 },
+    "default":          { productName: "Unknown WiZ Device", imageUrl: ImageUrl(), supportRGB: false, supportDimming: true, supportWhiteColor: false, ledCount: 1 }
 };
 
 export function DiscoveryService() {
-	this.Initialize = function(){
-		service.log("Initializing Plugin!");
-		service.log("Searching for network devices...");
-	};
-
-	this.firstRun = true;
-	this.IconUrl = "https://play-lh.googleusercontent.com/jhmzIodqBLQQUD2sJF_O6oawa04ocDFfQIgoH0rPOXQY3V1uVz0-FJvEieFjVO-kcJ8=w200-h200-rw";
-	this.UdpBroadcastPort = 38899;
-	this.UdpBroadcastAddress = "255.255.255.255"; //"239.255.255.250";
-	this.UdpListenPort = 38900;
-
-	this.CheckForDevices = function(){
-		service.log("Broadcasting device scan...");
-		service.broadcast(JSON.stringify({"method":"registration","params":{"phoneMac":"AAAAAAAAAAAA","register":false,"phoneIp":"1.2.3.4","id":"1"}}));
-		
-	};
-
-	this.Update = function(){
-		
-		for(const cont of service.controllers){
-			cont.obj.update();
-		}
-
-		const currentTime = Date.now();
-		if(currentTime - lastBroadcast >= 60000) {
-			lastBroadcast = currentTime;
-			this.CheckForDevices();
-		}
-
-	};
-
-	this.Shutdown = function(){
-
-	};
-
-	this.Discovered = function(value) {	
-
-		const packet = JSON.parse(value.response);
-		switch(packet.method){
-			case `registration`:
-				service.log(packet.result);
-				if(packet.result.success){
-					this.CreateController(value);
-				}
-				break;
-			case `getPilot`:
-				const pController = service.getController(value.id);
-				if (pController !== undefined){
-					pController.updateWithValue(value);
-				}
-				break;
-			case `getSystemConfig`:
-				const result = packet.result;
-				const sController = service.getController(value.id);
-				if (sController !== undefined){
-					service.log("Controller found");
-					sController.setDeviceInfo(result);
-				}
-				else{
-					service.log(`Controller not found ${value.id}`);
-				}
-				break;
-			case `firstBeat`:
-				service.log("First Beat");
-				service.log(packet);
-				break;
-
-			default:
-				service.log(`Unknown methode ${packet.method} response`);
-				break;
-		}		
-		
-	};
-
-	this.Removal = function(value){
-
-	};
-
-	this.CreateController  = function(value){
-		const controller = service.getController(value.id);
-		if (controller === undefined) {
-			service.addController(new WIZDevice(value));
-			service.log("Added new WIZ Device controller");
-		} else {
-			service.log("Update WIZ Device controller");
-			controller.updateWithValue(value);
-		}
-	};
+    this.running = false;
+    this.discoveryTimer = null;
+    this.livenessTimer = null;
+    this.controllers = {};
+    this.discoveryIntervalMs = DEFAULT_DISCOVERY_INTERVAL_S * 1000;
+    this.livenessIntervalMs = DEFAULT_LIVENESS_CHECK_S * 1000;
+    this.deviceTimeoutMs = DEFAULT_LIVENESS_CHECK_S * 1000 * 7;
+    this.Initialize = function () {
+        service.log("WiZ Discovery Service Initializing...");
+        this.discoveryIntervalMs = (discoveryIntervalSeconds || DEFAULT_DISCOVERY_INTERVAL_S) * 1000;
+        this.livenessIntervalMs = (livenessCheckSeconds || DEFAULT_LIVENESS_CHECK_S) * 1000;
+        this.deviceTimeoutMs = this.livenessIntervalMs * 7;
+        service.log(`Discovery Interval: ${this.discoveryIntervalMs
+        this.running = true;
+        this.controllers = {};
+        this.broadcastDiscovery();
+        this.discoveryTimer = service.setInterval(() => {
+            if (this.running) {
+                this.broadcastDiscovery();
+            }
+        }, this.discoveryIntervalMs);
+        this.livenessTimer = service.setInterval(() => {
+            if (this.running) {
+                this.checkDeviceLiveness();
+            }
+        }, this.livenessIntervalMs);
+        service.log("WiZ Discovery Service Started.");
+    };
+    this.broadcastDiscovery = function() {
+        const discoveryPacket = JSON.stringify({
+            "method": "registration",
+            "id": 1,
+            "params": {
+                "phoneMac": "AAAAAAAAAAAA",
+                "register": false,        
+                "phoneIp": "1.2.3.4"        
+            }
+        });
+        service.broadcast(discoveryPacket, 38899);
+    };
+    this.requestSystemConfig = function(ip) {
+         service.log(`Requesting System Config from ${ip}`);
+         const configPacket = JSON.stringify({ "method": "getSystemConfig", "id": 2 });
+         service.send(ip, 38899, configPacket);
+    };
+    this.requestPilot = function(ip) {
+        const pilotPacket = JSON.stringify({ "method": "getPilot", "id": 3 });
+        service.send(ip, 38899, pilotPacket);
+    };
+    this.checkDeviceLiveness = function() {
+        const now = Date.now();
+        let controllersToRemove = [];
+        for (const id in this.controllers) {
+            const controller = this.controllers[id];
+            if (!controller) continue;
+            if (now - controller.lastSeen > this.deviceTimeoutMs) {
+                service.log(`Device ${id} (${controller.ip}) timed out. Last seen ${Math.round((now - controller.lastSeen)/1000)}s ago. Removing.`);
+                controllersToRemove.push(id);
+            } else {
+                 this.requestPilot(controller.ip);
+            }
+        }
+        controllersToRemove.forEach(id => {
+            service.removeControllerById(id);
+            delete this.controllers[id];      
+        });
+         service.controllers.forEach(c => {
+             if (!c || !c.obj || !c.obj.id) return;
+             const ctrl = c.obj;
+            if (this.controllers[ctrl.id] && !ctrl.deviceInfoLoaded && ctrl.initialized) {
+                service.log(`Controller ${ctrl.id} (${ctrl.ip}) found but missing device info. Requesting SysConfig.`);
+                this.requestSystemConfig(ctrl.ip);
+            }
+         });
+    };
+    this.Shutdown = function () {
+        service.log("WiZ Discovery Service Shutting Down...");
+        this.running = false;
+        if (this.discoveryTimer) {
+            service.stopTimer(this.discoveryTimer);
+            this.discoveryTimer = null;
+        }
+        if (this.livenessTimer) {
+            service.stopTimer(this.livenessTimer);
+            this.livenessTimer = null;
+        }
+        this.controllers = {};
+        service.log("WiZ Discovery Service Stopped.");
+    };
+    this.Discovered = function (value) {
+        let packet;
+        try {
+            packet = JSON.parse(value.response);
+        } catch (e) {
+            service.log(`Error parsing JSON response from ${value.ip}: ${e}. Raw: ${value.response}`);
+            return;
+        }
+        const potentialMac = packet.result?.mac || packet.params?.mac;
+        const method = packet.method;
+        if (!potentialMac && method !== 'syncPilot' && method !== 'firstBeat') {
+             if ((method === 'syncPilot' || method === 'firstBeat') && !Object.values(this.controllers).some(c => c.ip === value.ip)) {
+                 service.log(`Received ${method} from unknown IP ${value.ip}. Requesting System Config.`);
+                 this.requestSystemConfig(value.ip);
+             }
+             return;
+        }
+        let macId = potentialMac ? potentialMac.toUpperCase() : null;
+        let controller = macId ? this.controllers[macId] : Object.values(this.controllers).find(c => c.ip === value.ip);
+        if (controller) {
+            controller.lastSeen = Date.now();
+            if (value.ip && controller.ip !== value.ip) {
+                service.log(`IP changed for ${controller.id}: ${controller.ip} -> ${value.ip}`);
+                controller.ip = value.ip;
+                 const deviceInstance = service.getController(controller.id);
+                 if(deviceInstance && deviceInstance.obj.isInitialized && deviceInstance.obj.wizProtocol) {
+                    deviceInstance.obj.wizProtocol.updateIpPort(value.ip, value.port || 38899);
+                 }
+                 service.updateController(controller);
+            }
+            if (value.port && controller.port !== value.port) {
+                service.log(`Port changed for ${controller.id}: ${controller.port} -> ${value.port}`);
+                controller.port = value.port;
+                 const deviceInstance = service.getController(controller.id);
+                 if(deviceInstance && deviceInstance.obj.isInitialized && deviceInstance.obj.wizProtocol) {
+                    deviceInstance.obj.wizProtocol.updateIpPort(controller.ip, value.port);
+                 }
+                service.updateController(controller);
+            }
+        } else if (macId) {
+        } else if (!macId && (method === 'syncPilot' || method === 'firstBeat')) {
+             return;
+        }
+        switch (method) {
+            case `registration`:
+                if (packet.result?.success && packet.result.mac) {
+                    macId = packet.result.mac.toUpperCase();
+                    service.log(`Successful registration response from MAC: ${macId} at IP: ${value.ip}`);
+                    this.CreateOrUpdateController(macId, value.ip, value.port);
+                    this.requestSystemConfig(value.ip);
+                } else if (!packet.result?.success) {
+                    service.log(`Registration failed response from ${value.ip}. Error: ${packet.error?.message || 'Unknown'}`);
+                }
+                break;
+            case `getSystemConfig`:
+                if (packet.result && packet.result.mac) {
+                    macId = packet.result.mac.toUpperCase();
+                    controller = this.controllers[macId];
+                    if (controller) {
+                        service.log(`Received System Config for ${macId} (${controller.ip}): Model=${packet.result.moduleName}`);
+                        const wasAnnounced = controller.announced;
+                        controller.setDeviceInfo(packet.result);
+                        if (!wasAnnounced && controller.deviceInfoLoaded) {
+                            service.announceController(controller);
+                            controller.announced = true;
+                            service.log(`Controller ${macId} announced.`);
+                        } else if (wasAnnounced) {
+                            service.updateController(controller);
+                            service.log(`Controller ${macId} info updated.`);
+                        }
+                    } else {
+                        service.log(`Received SysConfig for unknown MAC ${macId} at ${value.ip}. Creating and announcing.`);
+                        controller = this.CreateOrUpdateController(macId, value.ip, value.port);
+                        if (controller) {
+                             controller.setDeviceInfo(packet.result);
+                             if (!controller.announced && controller.deviceInfoLoaded){
+                                 service.announceController(controller);
+                                 controller.announced = true;
+                                 service.log(`Controller ${macId} (added from SysConfig) announced.`);
+                             }
+                        }
+                    }
+                } else {
+                     service.log(`getSystemConfig error response from ${value.ip}: ${packet.error?.message || 'No result or MAC in response'}`);
+                }
+                break;
+            case `getPilot`:
+                if (controller && !controller.deviceInfoLoaded) {
+                     service.log(`Got pilot from ${macId || controller.ip} but missing SysConfig. Requesting again.`);
+                    this.requestSystemConfig(controller.ip);
+                }
+                 if(controller && !controller.announced && controller.deviceInfoLoaded){
+                     service.log(`Got pilot from ${macId}, info loaded but wasn't announced. Announcing now.`);
+                     service.announceController(controller);
+                     controller.announced = true;
+                 }
+                break;
+            case `syncPilot`:
+            case `firstBeat`:
+                if (!controller) {
+                } else {
+                    if (!controller.deviceInfoLoaded) {
+                        this.requestSystemConfig(controller.ip);
+                    }
+                    if (!controller.announced && controller.deviceInfoLoaded) {
+                        service.announceController(controller);
+                        controller.announced = true;
+                    }
+                }
+                break;
+            default:
+                break;
+        }
+    };
+    this.CreateOrUpdateController = function(macId, ip, port) {
+        if (!macId) {
+            service.log("Error: CreateOrUpdateController called without macId.");
+            return null;
+        }
+        macId = macId.toUpperCase();
+        if (!this.controllers[macId]) {
+            service.log(`Creating new WiZ controller entry for ${macId} at ${ip}:${port}`);
+            try {
+                const newController = new WiZDevice(macId, ip, port || 38899);
+                this.controllers[macId] = newController;
+                return newController;
+            } catch (e) {
+                 service.log(`Error creating WiZDevice object for ${macId}: ${e}`);
+                 return null;
+            }
+        } else {
+            this.controllers[macId].lastSeen = Date.now();
+            return this.controllers[macId];
+        }
+    };
+    this.IconUrl = ImageUrl();
+    this.UdpBroadcastPort = 38899;
+    this.UdpBroadcastAddress = "255.255.255.255";
+    this.UdpListenPort = 38900;
 }
 
-
-
-class WIZDevice{
-	constructor(value){
-		this.id = value.id;
-		this.ip = value.ip;
-		this.port = value.port;
-		this.initialized = false;
-		this.deviceInfoLoaded = false;
-		this.announced = false;
-
-		this.wiztype = null;
-
-		//WIZ Device info
-		this.homeid = 0;
-		this.fwVersion = "0.0.0";
-		this.roomid = 0;
-		this.groupid = 0;
-		this.type = -1;
-		this.modelName = "";
-		this.isRGB = false;
-		this.isTW = false;
-
-		this.lastsend = {
-			"r":-1,
-			"g":-1,
-			"b":-1,
-			"brightness":-1,
-
-		}
-
-		this.DumpControllerInfo();
-		
-	};
-
-	
-
-	DumpControllerInfo(){
-		service.log(`id: ${this.id}`);
-		service.log(`port: ${this.port}`);
-		service.log(`ip: ${this.ip}`);
-	};
-
-	updateWithValue(value){
-		service.log("Got Value update");
-		const data = JSON.parse(value.response);
-		service.log(data);
-		this.ip = data.ip;
-		this.port = data.port;
-
-	};
-
-	setDeviceInfo(data){
-		//WIZ Device info
-		if(this.deviceInfoLoaded){
-			return;
-		}
-		this.homeid = data.homeid;
-		this.fwVersion = data.fwVersion;
-		this.roomId = data.roomId;
-		this.groupId = data.groupId;
-		this.type = data.hasOwnProperty("typeid") ? data.typeid : -1;
-		this.modelName = data.moduleName;
-		this.isRGB = data.moduleName.includes("RGB");
-		this.isTW = data.moduleName.includes("TW");
-		this.deviceInfoLoaded = true;
-		if(WIZDeviceLibrary.hasOwnProperty(this.modelName)){
-			this.wiztype = WIZDeviceLibrary[this.modelName];
-		}
-		
-		service.updateController(this);
-	}
-
-	update(){
-		if(!this.initialized){
-			this.initialized = true;
-			service.broadcast(JSON.stringify({"method": "getSystemConfig", "id": 1}),this.ip);
-			service.log(`Request Device Info from ${this.ip}`);
-		}
-		if(this.deviceInfoLoaded && !this.announced){
-			service.updateController(this);
-			service.announceController(this);
-			service.log("Is announced!")
-			this.announced = true;
-		}
-
-	};
-
+class WiZDevice {
+    constructor(id, ip, port) {
+        this.id = id;
+        this.ip = ip;
+        this.port = port || 38899;
+        this.lastSeen = Date.now();
+        this.initialized = true;
+        this.deviceInfoLoaded = false;
+        this.announced = false;
+        this.homeId = null;
+        this.fwVersion = "N/A";
+        this.roomId = null;
+        this.groupId = null;
+        this.moduleName = "Unknown";
+        this.modelName = "WiZ Device";
+        this.isRGB = false;
+        this.isTW = false;
+        this.wizType = null;
+        service.log(`WiZDevice object created for ${this.id} at ${this.ip}:${this.port}`);
+    }
+    setDeviceInfo(data) {
+        if (!data) {
+            service.log(`Error: setDeviceInfo called with null data for ${this.id}`);
+            return;
+        }
+        service.log(`Setting device info for ${this.id} from data: Model=${data.moduleName}, FW=${data.fwVersion}`);
+        this.homeId = data.homeId;
+        this.fwVersion = data.fwVersion || "N/A";
+        this.roomId = data.roomId;
+        this.groupId = data.groupId;
+        this.moduleName = data.moduleName || "Unknown";
+        this.isRGB = this.moduleName.includes("RGB");
+        this.isTW = this.moduleName.includes("TW") || this.moduleName.includes("DW");
+        if (this.isRGB) {
+            this.isTW = true;
+        }
+        this.wizType = WiZDeviceLibrary[this.moduleName] || WiZDeviceLibrary["default"];
+        this.modelName = this.wizType.productName;
+        if (this.wizType && this.wizType !== WiZDeviceLibrary["default"]) {
+            this.isRGB = this.wizType.supportRGB ?? this.isRGB;
+            this.isTW = this.wizType.supportWhiteColor ?? this.isTW;
+            if (this.isRGB || this.isTW) {
+                this.wizType.supportDimming = true;
+            }
+        } else {
+            if (!this.isRGB && !this.isTW && this.moduleName !== "Unknown" && !this.moduleName.includes("SHDW")) {
+                this.isTW = true;
+                 this.wizType = WiZDeviceLibrary["default"];
+                 this.wizType.supportDimming = true;
+                 this.wizType.supportWhiteColor = true;
+                service.log(`Module name '${this.moduleName}' not in library, assuming basic Tunable White/Dimmable.`);
+            }
+        }
+        this.deviceInfoLoaded = true;
+        this.lastSeen = Date.now();  
+        service.log(`Device info processed for ${this.id}: Name=${this.modelName}, RGB=${this.isRGB}, TW=${this.isTW}, Room=${this.roomId}`);
+    }
 }
 
-
-class WIZProtcol {
-
-	constructor(ip, port){
-		this.ip = ip;
-		this.port = port;
-		this.lastR = -1;
-		this.lastG = -1;
-		this.lastB = -1;
-		this.lastDimmR = -1;
-		this.lastDimmG = -1;
-		this.lastDimmB = -1;
-		this.lastBrightness = -1;
-	}
-
-	setPilot(r,g,b){
-		//device.log(`Request Device Info from ${this.ip}`);
-		let brightness = device.Brightness;
-		const color = device.createColorArray(dimmColor, 1, "Inline");
-
-		if(this.lastR !== r || this.lastG !== g || this.lastB !== b || this.lastBrightness !== brightness || this.lastDimmR !== color[0] || this.lastDimmG !== color[1] || this.lastDimmB !== color[2]){
-			this.lastG = g;
-			this.lastB = b;
-			this.lastR = r;
-
-			this.lastDimmR = color[0];
-			this.lastDimmG = color[1];
-			this.lastDimmB = color[2];
-			
-			if(r < 1 && g < 1 && b < 1){
-				this.lastBrightness = minBrightniss;
-				udp.send(this.ip,this.port,{"method":"setPilot","params":{"r":color[0],"g":color[1],"b":color[2],"dimming":minBrightniss,"speed":100}});
-			}
-			else{
-				this.lastBrightness = brightness;
-				udp.send(this.ip,this.port,{"method":"setPilot","params":{"r":r,"g":g,"b":b,"dimming":brightness,"speed":100}});
-			}
-		}
-		
-		
-
-	}
+class WizProtocol {
+    constructor(ip, port) {
+        this.ip = ip;
+        this.port = port || 38899;
+        this.lastSentState = { r: -1, g: -1, b: -1, temp: -1, brightness: -1, power: null };
+        this.lastSendTime = 0;
+        this.minSendInterval = 50;
+    }
+    updateIpPort(newIp, newPort) {
+        device.log(`Updating WizProtocol target for device ${this.lastSentState.macId || '(unknown ID)'} to ${newIp}:${newPort}`);
+        this.ip = newIp;
+        this.port = newPort || 38899;
+        this.lastSentState = { r: -1, g: -1, b: -1, temp: -1, brightness: -1, power: this.lastSentState.power };
+    }
+    _canSend() {
+        const now = Date.now();
+        if (now - this.lastSendTime > this.minSendInterval) {
+            this.lastSendTime = now;
+            return true;
+        }
+        return false;
+    }
+    _sendPilot(params) {
+        if (!this.ip) {
+             device.log("Error: Cannot send WiZ command, IP address is not set.");
+             return;
+        }
+        if (!this._canSend()) {
+            return;
+        }
+        const command = { "method": "setPilot", "id": 4, "params": params };
+        try {
+            udp.send(this.ip, this.port, command);
+        } catch (e) {
+            device.log(`Error sending UDP packet to ${this.ip}:${this.port}: ${e}`);
+        }
+    }
+    setPilotRgb(r, g, b, brightness) {
+        brightness = Math.max(MIN_WiZ_BRIGHTNESS, Math.min(MAX_WiZ_BRIGHTNESS, Math.round(brightness)));
+        if (this.lastSentState.r !== r || this.lastSentState.g !== g || this.lastSentState.b !== b || this.lastSentState.brightness !== brightness || this.lastSentState.power !== true) {
+            this._sendPilot({ "state": true, "r": r, "g": g, "b": b, "dimming": brightness });
+            this.lastSentState = { r, g, b, brightness, power: true, temp: -1 };
+        }
+    }
+    setPilotTw(temperature, brightness) {
+        brightness = Math.max(MIN_WiZ_BRIGHTNESS, Math.min(MAX_WiZ_BRIGHTNESS, Math.round(brightness)));
+        temperature = Math.max(MIN_WiZ_TEMPERATURE, Math.min(MAX_WiZ_TEMPERATURE, Math.round(temperature)));
+        if (this.lastSentState.temp !== temperature || this.lastSentState.brightness !== brightness || this.lastSentState.power !== true) {
+            this._sendPilot({ "state": true, "temp": temperature, "dimming": brightness });
+            this.lastSentState = { r: -1, g: -1, b: -1, temp: temperature, brightness, power: true };
+        }
+    }
+    setPilotState(isOn) {
+        if (this.lastSentState.power !== isOn) {
+            this._sendPilot({ "state": isOn });
+            this.lastSentState.power = isOn;
+        }
+    }
+     setPilotStateAndBrightness(isOn, brightness) {
+        brightness = Math.max(MIN_WiZ_BRIGHTNESS, Math.min(MAX_WiZ_BRIGHTNESS, Math.round(brightness)));
+         if (this.lastSentState.power !== isOn || (isOn && this.lastSentState.brightness !== brightness)) {
+             this._sendPilot({ "state": isOn, "dimming": brightness });
+             this.lastSentState.power = isOn;
+             if (isOn) {
+                 this.lastSentState.brightness = brightness;
+                 this.lastSentState.r = -1;
+                 this.lastSentState.g = -1;
+                 this.lastSentState.b = -1;
+                 this.lastSentState.temp = -1;
+             }
+         }
+     }
 }
 
-export function Image(){
-	return "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"
+export function ImageUrl() {
+    return "https://play-lh.googleusercontent.com/jhmzIodqBLQQUD2sJF_O6oawa04ocDFfQIgoH0rPOXQY3V1uVz0-FJvEieFjVO-kcJ8=w200-h200-rw";
 }

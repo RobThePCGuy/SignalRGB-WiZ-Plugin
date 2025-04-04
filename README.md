@@ -1,10 +1,18 @@
 # WIZ Lighting for SignalRGB
 
-[![Add To Installation](https://marketplace.signalrgb.com/resources/add-extension-256.png 'Add to My SignalRGB Installation')](signalrgb://addon/install?url=https://github.com/RobThePCGuy/SignalRGB-WiZ-Plugin/releases/download/v1.2.0/WiZ_Plugin.zip)
-
 ## Getting Started
 
 This SignalRGB plugin allows you to control WIZ smart lighting devices (bulbs, strips, lamps) directly from SignalRGB using your local network. No WIZ cloud account or app connection is required for control after initial setup.
+
+## Installation
+
+**Recommended:** Click the link below or copy/paste the URI into your browser's address bar.
+
+[Add WIZ Plugin to SignalRGB](signalrgb://addon/install?url=https://github.com/RobThePCGuy/SignalRGB-WiZ-Plugin/releases/download/v1.2.0/WiZ_Plugin.zip)
+
+[![Add to SignalRGB](https://marketplace.signalrgb.com/resources/add-extension-256.png)](signalrgb://addon/install?url=https://github.com/RobThePCGuy/SignalRGB-WiZ-Plugin/releases/download/v1.2.0/WiZ_Plugin.zip)
+
+**Note:** Clicking the button above might not work directly in some browsers due to security settings. If it opens an image, please **right-click the button, copy the link address**, and paste it into your browser's address bar, or use the manual installation steps.
 
 ## Key Requirements & Limitations
 
@@ -14,8 +22,3 @@ This SignalRGB plugin allows you to control WIZ smart lighting devices (bulbs, s
 *   WIZ **Groups** and **Scenes** (from the WIZ app) are **not** supported. This plugin controls individual devices.
 *   Tunable White (TW) only devices use a fixed color temperature set in plugin settings; effects only control brightness for these.
 *   WIZ Smart Plugs are detected but cannot be controlled as lights.
-
-## Installation
-
-Click the button.
----

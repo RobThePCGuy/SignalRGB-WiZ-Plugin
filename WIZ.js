@@ -1,3 +1,20 @@
+/* Polyfill for setInterval and clearInterval in case they're not defined */
+if (typeof setInterval === 'undefined') {
+    function setInterval(fn, interval) {
+        function loop() {
+            fn();
+            timer = setTimeout(loop, interval);
+        }
+        let timer = setTimeout(loop, interval);
+        return timer;
+    }
+}
+if (typeof clearInterval === 'undefined') {
+    function clearInterval(timer) {
+        clearTimeout(timer);
+    }
+}
+
 export function Name() { return "WIZ Interface"; }
 export function Version() { return "1.1.1"; } // Incremented version for fix
 export function VendorId() { return 0x0; }
@@ -15,7 +32,7 @@ controller: readonly,
 discovery: readonly,
 device: writeonly,
 service: readonly, // Correct global object for service functions
-udp: writeonly,    // Correct global object for device-level UDP send
+// udp: writeonly,    // Removed: Using device.udp instead
 TurnOffOnShutdown: readonly,
 AutoStartStream: readwrite,
 forcedColor: readwrite,
@@ -154,14 +171,14 @@ export function DiscoveryService() {
 
         this.broadcastDiscovery();
 
-        // Using global setInterval instead of service.setInterval
+        // Using global setInterval (polyfilled if necessary)
         this.discoveryTimer = setInterval(() => {
             if (this.running) {
                 this.broadcastDiscovery();
             }
         }, BROADCAST_INTERVAL);
 
-        // Using global setInterval instead of service.setInterval
+        // Using global setInterval (polyfilled if necessary)
         this.livenessTimer = setInterval(() => {
             if (this.running) {
                 this.checkDeviceLiveness();
@@ -189,15 +206,15 @@ export function DiscoveryService() {
     this.requestSystemConfig = function(ip) {
          service.log(`Requesting System Config from ${ip}`);
          const configPacket = JSON.stringify({ "method": "getSystemConfig", "id": 1 });
-         // Using udp.send instead of service.send for unicast messages
-         udp.send(ip, 38899, configPacket);
+         // Using device.udp.send instead of udp.send for unicast messages
+         device.udp.send(ip, 38899, configPacket);
     };
 
     this.requestPilot = function(ip) {
         service.log(`Requesting Pilot state from ${ip}`);
         const pilotPacket = JSON.stringify({ "method": "getPilot", "id": 1 });
-        // Using udp.send instead of service.send for unicast messages
-        udp.send(ip, 38899, pilotPacket);
+        // Using device.udp.send instead of udp.send for unicast messages
+        device.udp.send(ip, 38899, pilotPacket);
     };
 
     this.checkDeviceLiveness = function() {
@@ -234,12 +251,12 @@ export function DiscoveryService() {
         service.log("WIZ Discovery Service Shutting Down...");
         this.running = false;
         if (this.discoveryTimer) {
-            // Using clearInterval instead of service.stopTimer
+            // Using clearInterval (polyfilled if necessary)
             clearInterval(this.discoveryTimer);
             this.discoveryTimer = null;
         }
         if (this.livenessTimer) {
-            // Using clearInterval instead of service.stopTimer
+            // Using clearInterval (polyfilled if necessary)
             clearInterval(this.livenessTimer);
             this.livenessTimer = null;
         }
@@ -462,8 +479,8 @@ class WizProtocol {
     _sendPilot(params) {
         if (!this._canSend()) { return; }
         const command = { "method": "setPilot", "params": params };
-        // Convert the command object to a JSON string before sending
-        udp.send(this.ip, this.port, JSON.stringify(command));
+        // Convert the command object to a JSON string before sending using device.udp.send
+        device.udp.send(this.ip, this.port, JSON.stringify(command));
     }
 
     setPilotRgb(r, g, b, brightness) {

@@ -1,3 +1,5 @@
+// --- START OF FILE WIZ.qml.txt ---
+
 import QtQuick 2.15
 import QtQuick.Layouts 1.15
 import QtQuick.Controls 2.15
@@ -177,3 +179,4 @@ Item {
         } // End ColumnLayout (main content)
     } // End ScrollView
 }
+// --- END OF FILE WIZ.qml.txt ---

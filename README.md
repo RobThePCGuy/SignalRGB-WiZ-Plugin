@@ -8,6 +8,8 @@ This SignalRGB plugin allows you to control WIZ smart lighting devices (bulbs, s
 
 **Recommended:** Copy/paste the URI into your browser's address bar.
 
+[![Add to SignalRGB](https://raw.githubusercontent.com/RobThePCGuy/SignalRGB-WiZ-Plugin/refs/heads/main/add-extension-256.png)](https://github.com/RobThePCGuy/SignalRGB-WiZ-Plugin/releases/download/v1.2.0/WiZ_Plugin.zip)
+
 `signalrgb://addon/install?url=https://github.com/RobThePCGuy/SignalRGB-WiZ-Plugin/releases/download/v1.2.0/WiZ_Plugin.zip`
 
 ## Key Requirements & Limitations

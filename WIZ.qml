@@ -179,4 +179,7 @@ Item {
         } // End ColumnLayout (main content)
     } // End ScrollView
 }
+<<<<<<< HEAD
 // --- END OF FILE WIZ.qml.txt ---
+=======
+>>>>>>> d3998953e23bf01e054f44b078ba37aca4030716

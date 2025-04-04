@@ -1,42 +1,42 @@
 export function Name() { return "WIZ Interface"; }
-export function Version() { return "1.1.0"; } // Incremented version
-export function VendorId() { return 0x0; } // Standard for Network plugins
-export function ProductId() { return 0x0; } // Standard for Network plugins
+export function Version() { return "1.1.1"; } // Incremented version for fix
+export function VendorId() { return 0x0; }
+export function ProductId() { return 0x0; }
 export function Type() { return "network"; }
-export function Publisher() { return "GreenSky Productions (Enhanced)"; } // Added acknowledgement
-export function Size() { return [1, 1]; } // Represents a single controllable zone
+export function Publisher() { return "GreenSky Productions (Enhanced)"; }
+export function Size() { return [1, 1]; }
 export function DefaultPosition() { return [75, 70]; }
 export function DefaultScale() { return 10.0; }
 export function DefaultComponentBrand() { return "WIZ"; }
-export function SubdeviceController() { return false; } // This plugin controls devices directly
+export function SubdeviceController() { return false; }
 
 /* global
 controller: readonly,
 discovery: readonly,
 device: writeonly,
-service: readonly,
-udp: writeonly,
-TurnOffOnShutdown: readonly, // Standard SignalRGB Global variable
-AutoStartStream: readwrite,  // User controllable parameter
-forcedColor: readwrite,      // User controllable parameter
-minBrightness: readwrite,  // User controllable parameter (Corrected typo)
-dimmColor: readwrite,        // User controllable parameter
-forceColor: readwrite,       // User controllable parameter
+service: readonly, // Correct global object for service functions
+udp: writeonly,    // Correct global object for device-level UDP send
+TurnOffOnShutdown: readonly,
+AutoStartStream: readwrite,
+forcedColor: readwrite,
+minBrightness: readwrite,
+dimmColor: readwrite,
+forceColor: readwrite,
 */
 
 // Constants
-const MIN_WIZ_BRIGHTNESS = 10; // WIZ brightness range is 10-100
+const MIN_WIZ_BRIGHTNESS = 10;
 const MAX_WIZ_BRIGHTNESS = 100;
-const DEFAULT_TW_TEMP = 4000; // Default Kelvin for TW devices if forcing color
+const DEFAULT_TW_TEMP = 4000;
 
 // User Controllable Parameters
 export function ControllableParameters() {
     return [
-        { "property": "AutoStartStream", "group": "settings", "label": "Automatically Control on Startup", "type": "boolean", "default": true }, // Defaulting to true seems more user-friendly
+        { "property": "AutoStartStream", "group": "settings", "label": "Automatically Control on Startup", "type": "boolean", "default": true },
         { "property": "forceColor", "group": "settings", "label": "Force Color (Overrides SignalRGB)", "type": "boolean", "default": false },
         { "property": "forcedColor", "group": "lighting", "label": "Forced Color", "type": "color", "default": "#009bde" },
-        { "property": "minBrightness", "group": "lighting", "label": "Minimum Brightness (%)", "min": "10", "max": "100", "type": "number", "default": "10" }, // Corrected typo, adjusted range/type
-        { "property": "dimmColor", "group": "lighting", "label": "Color When SignalRGB is Black/Dim", "type": "color", "default": "#101010" }, // Slightly brighter default dim color
+        { "property": "minBrightness", "group": "lighting", "label": "Minimum Brightness (%)", "min": "10", "max": "100", "type": "number", "default": "10" },
+        { "property": "dimmColor", "group": "lighting", "label": "Color When SignalRGB is Black/Dim", "type": "color", "default": "#101010" },
     ];
 }
 
@@ -48,34 +48,28 @@ let isInitialized = false;
 export function Initialize() {
     device.log(`Initializing WIZ Device: ${controller.id} (${controller.modelName || 'Unknown Model'})`);
     device.addFeature("udp");
-
-    // Set a more descriptive name
     device.setName(`WIZ ${controller.modelName ? controller.modelName : ''} (${controller.id.substring(controller.id.length - 4)})`);
 
-    // Set Icon based on type if available in library
     if (controller.wizType && controller.wizType.imageUrl) {
-        // device.setIconUrl(controller.wizType.imageUrl); // Use setIconUrl
+        // device.setIconUrl(controller.wizType.imageUrl);
     }
 
-    // Define the controllable LED(s) - WIZ bulbs/strips are typically single-zone
     device.setControllableLeds(["LED 1"], [[0, 0]]);
-    device.setSize([1, 1]); // Confirm size matches LED layout
+    device.setSize([1, 1]);
 
-    // Remove color forcing options if the device is Tunable White only
     if (controller.isTW && !controller.isRGB) {
         device.removeProperty("forcedColor");
         device.removeProperty("forceColor");
-        device.removeProperty("dimmColor"); // dimmColor relies on RGB
+        device.removeProperty("dimmColor");
         device.log("Device is Tunable White only. Color properties removed.");
     }
 
     wizProtocol = new WizProtocol(controller.ip, controller.port, controller.isTW && !controller.isRGB);
     isInitialized = true;
 
-    // Start stream immediately if AutoStart is enabled
     if (AutoStartStream) {
         device.log("AutoStartStream enabled. Initializing state.");
-        Render(); // Send initial state
+        Render();
     } else {
         device.log("AutoStartStream disabled. Device will wait for SignalRGB data.");
     }
@@ -84,58 +78,37 @@ export function Initialize() {
 // Called periodically to send color/brightness data
 export function Render() {
     if (!isInitialized || !wizProtocol) {
-        // device.log("Render called before initialization or missing protocol handler.");
         return;
     }
-
-    // If AutoStartStream is off, don't send commands unless SignalRGB is actively sending data (implicitly handled by effect engine)
-    // However, we might need to handle the "forced color" case even if AutoStart is off? Let's assume AutoStart gates all control for simplicity now.
     if (!AutoStartStream) {
-         // If autostart is off, we might want to ensure the light is off or in a known state?
-         // For now, do nothing if autostart is off. The light remains in its previous state.
         return;
     }
 
     let r, g, b, brightnessPercent;
 
-    if (forceColor && controller.isRGB) { // Force color only works reliably on RGB devices
+    if (forceColor && controller.isRGB) {
         [r, g, b] = device.hexToRgb(forcedColor);
-        // Use device brightness slider when forcing color? Or fixed brightness? Let's use device brightness.
         brightnessPercent = device.getBrightness();
-        // device.log(`Forcing color: ${r},${g},${b} at ${brightnessPercent}% brightness`);
     } else {
-        // Get color from SignalRGB's [0,0] pixel
         [r, g, b] = device.color(0, 0);
         brightnessPercent = device.getBrightness();
-        // device.log(`SignalRGB color: ${r},${g},${b} at ${brightnessPercent}% brightness`);
     }
 
-    // Map SignalRGB brightness (0-100) to WIZ brightness (10-100), respecting minBrightness setting
     let wizBrightness = Math.max(MIN_WIZ_BRIGHTNESS, minBrightness, Math.round(brightnessPercent / 100 * (MAX_WIZ_BRIGHTNESS - MIN_WIZ_BRIGHTNESS) + MIN_WIZ_BRIGHTNESS));
-    wizBrightness = Math.min(MAX_WIZ_BRIGHTNESS, wizBrightness); // Clamp to WIZ max
+    wizBrightness = Math.min(MAX_WIZ_BRIGHTNESS, wizBrightness);
 
-    // Handle the "dim color" case when SignalRGB output is very dark/black
-    const isSignalDark = r < 5 && g < 5 && b < 5; // Threshold for "dark"
+    const isSignalDark = r < 5 && g < 5 && b < 5;
 
-    if (isSignalDark && controller.isRGB) { // dimmColor only makes sense for RGB devices
+    if (isSignalDark && controller.isRGB) {
         [r, g, b] = device.hexToRgb(dimmColor);
-        // Use minBrightness when dimmed, or should it be a separate setting? Let's use minBrightness.
         wizBrightness = Math.max(MIN_WIZ_BRIGHTNESS, minBrightness);
-        // device.log(`SignalRGB is dark. Using dimmColor: ${r},${g},${b} at ${wizBrightness} WIZ brightness`);
         wizProtocol.setPilotRgb(r, g, b, wizBrightness);
-
     } else if (controller.isTW && !controller.isRGB) {
-        // Handle Tunable White device - use brightness only
-        // device.log(`Setting TW device brightness: ${wizBrightness}`);
-        wizProtocol.setPilotTw(DEFAULT_TW_TEMP, wizBrightness); // Use default temp, only control brightness
-
+        wizProtocol.setPilotTw(DEFAULT_TW_TEMP, wizBrightness);
     } else {
-        // Handle RGB or RGB+TW device with SignalRGB color
-        // device.log(`Setting RGB device: ${r},${g},${b} at ${wizBrightness} WIZ brightness`);
         wizProtocol.setPilotRgb(r, g, b, wizBrightness);
     }
 }
-
 
 // Called when the plugin or SignalRGB shuts down
 export function Shutdown(suspend) {
@@ -143,39 +116,23 @@ export function Shutdown(suspend) {
     if (wizProtocol) {
         if (TurnOffOnShutdown && AutoStartStream) {
             device.log("Turning off device due to TurnOffOnShutdown setting.");
-            wizProtocol.setPilotState(false); // Send power off command
+            wizProtocol.setPilotState(false);
         } else {
-            // Optional: Send a final neutral color/brightness state if not turning off?
-            // Or just leave it as is. Leaving it is usually preferred.
              device.log("Leaving device in current state on shutdown.");
         }
     }
-    isInitialized = false; // Mark as uninitialized
+    isInitialized = false;
 }
 
-// --- WIZ Device Data Structure (Placeholder - real data comes from discovery) ---
-/**
- * @typedef {object} WizTypeInfo
- * @property {string} productName
- * @property {string} imageUrl
- * @property {number} [sku]
- * @property {boolean} supportRGB
- * @property {boolean} supportDimming
- * @property {boolean} supportWhiteColor - Indicates controllable white temp/channels
- * @property {boolean} supportCostumLedCount - Usually false for bulbs
- * @property {number} ledCount - Usually 1 for bulbs/simple strips
- */
-
-/** @type {Object.<string, WizTypeInfo>} */
+// --- WIZ Device Data Structure ---
+/** @typedef {object} WizTypeInfo ... */ // (keeping definitions concise)
 const WIZDeviceLibrary = {
-    // Key should ideally be the 'moduleName' reported by the device
     "ESP01_SHDW_01":    { productName: "WIZ Smart Plug", imageUrl: "", supportRGB: false, supportDimming: false, supportWhiteColor: false, ledCount: 0 },
     "ESP03_SHRGB3_01":  { productName: "WRGB LED Strip", imageUrl: "https://www.assets.signify.com/is/image/Signify/WiFi-BLE-LEDstrip-2M-1600lm-startkit-SPP?&wid=200&hei=200&qlt=100", supportRGB: true, supportDimming: true, supportWhiteColor: true, ledCount: 1 },
     "ESP15_SHTW_01I":   { productName: "WIZ Tunable White A60 E27", imageUrl: "", supportRGB: false, supportDimming: true, supportWhiteColor: true, ledCount: 1 },
     "ESP06_SHRGB_01":   { productName: "WIZ Color A60 E27", imageUrl: "https://www.assets.signify.com/is/image/PhilipsLighting/9290023835-IMS-en_SG?wid=400&hei=400&$pnglarge$", supportRGB: true, supportDimming: true, supportWhiteColor: true, ledCount: 1 },
-     "ESP20_SHRGBW_01B": { productName: "WIZ Squire Table Lamp", imageUrl: "", supportRGB: true, supportDimming: true, supportWhiteColor: true, ledCount: 1 },
-    // Add more known devices here using their 'moduleName'
-    "default":          { productName: "Unknown WIZ Device", imageUrl: "", supportRGB: false, supportDimming: true, supportWhiteColor: false, ledCount: 1 } // Default fallback
+    "ESP20_SHRGBW_01B": { productName: "WIZ Squire Table Lamp", imageUrl: "", supportRGB: true, supportDimming: true, supportWhiteColor: true, ledCount: 1 },
+    "default":          { productName: "Unknown WIZ Device", imageUrl: "", supportRGB: false, supportDimming: true, supportWhiteColor: false, ledCount: 1 }
 };
 
 // --- Discovery Service ---
@@ -184,28 +141,27 @@ export function DiscoveryService() {
     this.running = false;
     this.discoveryTimer = null;
     this.livenessTimer = null;
-    this.controllers = {}; // Store controller objects keyed by MAC ID
+    this.controllers = {};
 
-    const BROADCAST_INTERVAL = 60000; // 60 seconds
-    const LIVENESS_CHECK_INTERVAL = 30000; // 30 seconds
-    const DEVICE_TIMEOUT = BROADCAST_INTERVAL * 3.5; // ~3.5 minutes timeout
+    const BROADCAST_INTERVAL = 60000;
+    const LIVENESS_CHECK_INTERVAL = 30000;
+    const DEVICE_TIMEOUT = BROADCAST_INTERVAL * 3.5;
 
     this.Initialize = function () {
         service.log("WIZ Discovery Service Initializing...");
         this.running = true;
-        this.controllers = {}; // Clear previous state
+        this.controllers = {};
 
-        // Initial broadcast
         this.broadcastDiscovery();
 
-        // Set up periodic discovery broadcast
+        // FIX: Use service.setInterval
         this.discoveryTimer = service.setInterval(() => {
             if (this.running) {
                 this.broadcastDiscovery();
             }
         }, BROADCAST_INTERVAL);
 
-        // Set up periodic liveness checks and removal
+        // FIX: Use service.setInterval
         this.livenessTimer = service.setInterval(() => {
             if (this.running) {
                 this.checkDeviceLiveness();
@@ -215,32 +171,32 @@ export function DiscoveryService() {
         service.log("WIZ Discovery Service Started.");
     };
 
+    // FIX: Added empty Update function to prevent log spam
+    this.Update = function() {
+        // Nothing needed here, timers handle periodic tasks
+    };
+
     this.broadcastDiscovery = function() {
         service.log("Broadcasting WIZ discovery packet...");
-        // Standard WIZ registration request to discover devices
         const discoveryPacket = JSON.stringify({
             "method": "registration",
-            "params": {
-                "phoneMac": "AAAAAAAAAAAA", // Fake MAC
-                "register": false,
-                "phoneIp": "1.2.3.4",        // Fake IP
-                "id": "1"                   // Arbitrary ID
-            }
+            "params": { "phoneMac": "AAAAAAAAAAAA", "register": false, "phoneIp": "1.2.3.4", "id": "1" }
         });
-        // Port 38899 is standard for WIZ broadcast discovery
+        // Use service.broadcast for discovery
         service.broadcast(discoveryPacket, 38899);
     };
 
     this.requestSystemConfig = function(ip) {
          service.log(`Requesting System Config from ${ip}`);
          const configPacket = JSON.stringify({ "method": "getSystemConfig", "id": 1 });
-         // Send directly to device IP, port 38899 seems common for commands too
+         // FIX: Use service.send for unicast messages
          service.send(ip, 38899, configPacket);
     };
 
     this.requestPilot = function(ip) {
         // service.log(`Requesting Pilot state from ${ip}`);
         const pilotPacket = JSON.stringify({ "method": "getPilot", "id": 1 });
+        // FIX: Use service.send for unicast messages
         service.send(ip, 38899, pilotPacket);
     }
 
@@ -248,31 +204,28 @@ export function DiscoveryService() {
         const now = Date.now();
         let controllersToRemove = [];
 
-        // Check existing controllers
         for (const id in this.controllers) {
             const controller = this.controllers[id];
             if (now - controller.lastSeen > DEVICE_TIMEOUT) {
                 service.log(`Device ${id} (${controller.ip}) timed out. Last seen ${Math.round((now - controller.lastSeen)/1000)}s ago. Removing.`);
                 controllersToRemove.push(id);
             } else {
-                 // Optionally send a getPilot to confirm it's still alive if recently seen
                  if (now - controller.lastSeen < LIVENESS_CHECK_INTERVAL * 2) {
-                    this.requestPilot(controller.ip);
+                    this.requestPilot(controller.ip); // Check if alive
                  }
             }
         }
 
-        // Remove timed-out controllers
         controllersToRemove.forEach(id => {
-            service.removeControllerById(id); // Use SignalRGB's service function
+            service.removeControllerById(id);
             delete this.controllers[id];
         });
 
-        // Also request updates from recently added but not fully initialized controllers
          service.controllers.forEach(c => {
-            const ctrl = c.obj; // Access the underlying JS object
+            const ctrl = c.obj;
             if (this.controllers[ctrl.id] && !ctrl.deviceInfoLoaded && ctrl.initialized) {
-                this.requestSystemConfig(ctrl.ip);
+                 // Don't re-request config here aggressively, rely on discovery or pilot checks
+                 // this.requestSystemConfig(ctrl.ip);
             }
          });
     };
@@ -281,235 +234,210 @@ export function DiscoveryService() {
         service.log("WIZ Discovery Service Shutting Down...");
         this.running = false;
         if (this.discoveryTimer) {
+             // FIX: Use service.stopTimer
             service.stopTimer(this.discoveryTimer);
             this.discoveryTimer = null;
         }
         if (this.livenessTimer) {
+             // FIX: Use service.stopTimer
             service.stopTimer(this.livenessTimer);
             this.livenessTimer = null;
         }
-        this.controllers = {}; // Clear controllers on shutdown
+        this.controllers = {};
         service.log("WIZ Discovery Service Stopped.");
     };
 
-    // Process incoming UDP packets (listens on 38900 by default via service)
     this.Discovered = function (value) {
-        // service.log(`Received UDP packet from ${value.ip}:${value.port}`);
         let packet;
         try {
             packet = JSON.parse(value.response);
-            // service.log(`Parsed Packet: ${JSON.stringify(packet)}`);
         } catch (e) {
-            service.log(`Error parsing JSON response from ${value.ip}: ${e}`);
-            service.log(`Raw response: ${value.response}`);
+            service.log(`Error parsing JSON response from ${value.ip}: ${e}. Raw: ${value.response}`);
             return;
         }
 
-        // Extract potential MAC ID from the packet if available (sometimes in result/params)
-        const potentialMac = packet.result?.mac || packet.params?.mac || value.id; // Use value.id (MAC from WIZDevice) as fallback
+        const potentialMac = packet.result?.mac || packet.params?.mac || value.id;
         if (!potentialMac) {
-            service.log(`Packet from ${value.ip} doesn't contain identifiable MAC.`);
+            // Some WIZ responses might lack a MAC, especially errors from broadcasts
+            // service.log(`Packet from ${value.ip} doesn't contain identifiable MAC. Method: ${packet.method}`);
             return;
         }
-        const macId = potentialMac.toUpperCase(); // Standardize MAC format
+        const macId = potentialMac.toUpperCase();
 
-
-        // Update last seen time for the device
+        // Update last seen and IP/Port if the controller exists in our tracking
         if (this.controllers[macId]) {
             this.controllers[macId].lastSeen = Date.now();
-             // Update IP and Port if they changed (DHCP)
+            let ipChanged = false;
+            let portChanged = false;
+
             if (value.ip && this.controllers[macId].ip !== value.ip) {
                 service.log(`IP changed for ${macId}: ${this.controllers[macId].ip} -> ${value.ip}`);
                 this.controllers[macId].ip = value.ip;
-                 // Update the controller object in SignalRGB service too
-                 const ctrlToUpdate = service.getController(macId);
-                 if (ctrlToUpdate) {
-                    ctrlToUpdate.ip = value.ip;
-                    service.updateController(ctrlToUpdate); // Notify SignalRGB of the change
-                 }
+                ipChanged = true;
             }
-             // Port changes less likely but possible
-             if (value.port && this.controllers[macId].port !== value.port) {
+            if (value.port && this.controllers[macId].port !== value.port) {
                 service.log(`Port changed for ${macId}: ${this.controllers[macId].port} -> ${value.port}`);
-                 this.controllers[macId].port = value.port;
+                this.controllers[macId].port = value.port;
+                 portChanged = true;
+            }
+
+            // Update the actual SignalRGB controller object if needed
+            if(ipChanged || portChanged) {
                  const ctrlToUpdate = service.getController(macId);
                  if (ctrlToUpdate) {
-                    ctrlToUpdate.port = value.port;
-                    service.updateController(ctrlToUpdate);
+                    if(ipChanged) ctrlToUpdate.ip = value.ip;
+                    if(portChanged) ctrlToUpdate.port = value.port;
+                    service.updateController(ctrlToUpdate); // Notify SignalRGB
                  }
             }
+
+        } else if (packet.method !== 'registration' && packet.method !== 'syncPilot' && packet.method !== 'firstBeat') {
+            // If we receive a non-discovery packet for an unknown device, ignore it for now
+            // Avoids trying to handle pilot/config responses for devices not yet created
+             // service.log(`Received ${packet.method} from unknown MAC ${macId}. Ignoring until registered.`);
+            return;
         }
 
-        // Handle different WIZ methods
+
         switch (packet.method) {
             case `registration`:
-                if (packet.result?.success && packet.result.mac) {
-                    service.log(`Successful registration response from MAC: ${packet.result.mac} at IP: ${value.ip}`);
-                    this.CreateOrUpdateController(macId, value.ip, value.port);
-                    // Once registered, immediately request its config
-                    this.requestSystemConfig(value.ip);
+                if (packet.result?.success && packet.result.mac) { // Ensure MAC is present
+                    // service.log(`Successful registration response from MAC: ${macId} at IP: ${value.ip}`);
+                    const created = this.CreateOrUpdateController(macId, value.ip, value.port);
+                    if (created || !this.controllers[macId].deviceInfoLoaded) {
+                         // Request config if newly created or info wasn't loaded before
+                        this.requestSystemConfig(value.ip);
+                    }
                 } else if (!packet.result?.success) {
-                    service.log(`Registration failed for ${value.ip}. Error: ${packet.error?.message || 'Unknown'}`);
+                    // service.log(`Registration failed for ${value.ip}. Error: ${packet.error?.message || 'Unknown'}`);
                 }
                 break;
 
             case `getSystemConfig`:
                 if (packet.result) {
-                    service.log(`Received System Config for ${macId}: ${JSON.stringify(packet.result.moduleName)}`);
+                    // service.log(`Received System Config for ${macId}: ${JSON.stringify(packet.result.moduleName)}`);
                     const controller = this.controllers[macId];
                     if (controller) {
+                        const previouslyAnnounced = controller.announced;
                         controller.setDeviceInfo(packet.result);
-                        // Announce only after config is received
-                         if (!controller.announced) {
-                            service.announceController(controller); // Announce to SignalRGB
+                         if (!previouslyAnnounced) {
+                            service.announceController(controller);
                             controller.announced = true;
-                            service.log(`Controller ${macId} announced.`);
+                            service.log(`Controller ${macId} (${controller.modelName}) announced.`);
                          } else {
-                            service.updateController(controller); // Update existing controller info
-                            service.log(`Controller ${macId} info updated.`);
+                            service.updateController(controller);
+                            // service.log(`Controller ${macId} info updated.`);
                          }
                     } else {
-                        service.log(`Received SysConfig for unknown MAC ${macId}, requesting registration info.`);
-                         // It responded to getSystemConfig, so it exists. Try to add it.
-                         this.CreateOrUpdateController(macId, value.ip, value.port);
-                         // Re-request config to ensure we process it correctly now controller exists
-                         this.requestSystemConfig(value.ip);
+                         // Should not happen often if we ignore packets from unknown MACs earlier
+                         service.log(`Received SysConfig for untracked MAC ${macId}. Requesting registration.`);
+                         this.broadcastDiscovery(); // Trigger a fresh discovery
                     }
                 } else {
-                     service.log(`getSystemConfig error for ${macId}: ${packet.error?.message || 'Unknown'}`);
+                     // service.log(`getSystemConfig error for ${macId}: ${packet.error?.message || 'Unknown'}`);
                 }
                 break;
 
             case `getPilot`:
-                // Received pilot state - confirms device is alive. We already updated lastSeen.
-                // We don't typically need to parse the pilot state in discovery, but could log it.
-                // service.log(`Received Pilot state from ${macId}`);
                  const pilotController = this.controllers[macId];
                  if (pilotController && !pilotController.deviceInfoLoaded) {
-                    // If we got pilot but still missing config, request config again.
-                     service.log(`Got pilot from ${macId} but still missing SysConfig. Requesting again.`);
+                    // service.log(`Got pilot from ${macId} but still missing SysConfig. Requesting again.`);
                     this.requestSystemConfig(pilotController.ip);
                  }
                  if(pilotController && !pilotController.announced && pilotController.deviceInfoLoaded){
-                     service.log(`Got pilot from ${macId}, info loaded but not announced. Announcing now.`);
-                     service.announceController(pilotController); // Announce to SignalRGB
+                     // service.log(`Got pilot from ${macId}, info loaded but not announced. Announcing now.`);
+                     service.announceController(pilotController);
                      pilotController.announced = true;
                  }
                 break;
 
             case `syncPilot`:
             case `firstBeat`:
-                // These are often broadcast by the lights themselves. Good for discovery/liveness.
-                // service.log(`Received ${packet.method} from ${macId} at ${value.ip}`);
                  if (!this.controllers[macId]) {
-                    // If we detect a device via its own broadcasts, try to add and query it
-                    service.log(`Detected new device ${macId} via ${packet.method}. Adding and querying.`);
+                    // service.log(`Detected new device ${macId} via ${packet.method}. Adding and querying.`);
                     this.CreateOrUpdateController(macId, value.ip, value.port);
-                    this.requestSystemConfig(value.ip);
+                    this.requestSystemConfig(value.ip); // Query its config
                  } else {
-                     // Just confirms liveness
-                     this.controllers[macId].lastSeen = Date.now();
+                     this.controllers[macId].lastSeen = Date.now(); // Update liveness
                  }
                 break;
 
-            default:
-                // service.log(`Received unhandled method '${packet.method}' from ${macId}`);
-                break;
+            // default: service.log(`Received unhandled method '${packet.method}' from ${macId}`); break;
         }
     };
 
-    // Handles adding or updating controller info
     this.CreateOrUpdateController = function(macId, ip, port) {
+         let created = false;
         if (!this.controllers[macId]) {
             service.log(`Creating new WIZ controller entry for ${macId} at ${ip}:${port}`);
             const newController = new WIZDevice(macId, ip, port);
             this.controllers[macId] = newController;
-            // Don't announce yet - wait for getSystemConfig response
+            created = true;
         } else {
-            // Update existing controller's IP/Port and lastSeen (already handled in Discovered)
-            service.log(`Updating existing WIZ controller entry for ${macId}`);
+            // service.log(`Updating existing WIZ controller entry for ${macId}`);
             this.controllers[macId].lastSeen = Date.now(); // Ensure lastSeen is updated
+             // IP/Port updates handled in Discovered()
         }
+        return created; // Return true if a new controller object was created
     };
 
-    this.IconUrl = "https://play-lh.googleusercontent.com/jhmzIodqBLQQUD2sJF_O6oawa04ocDFfQIgoH0rPOXQY3V1uVz0-FJvEieFjVO-kcJ8=w200-h200-rw"; // Keep the icon
-    this.UdpBroadcastPort = 38899; // Port to send discovery packets TO
-    this.UdpBroadcastAddress = "255.255.255.255"; // Standard broadcast
-    this.UdpListenPort = 38900; // Port SignalRGB should listen ON for replies
+    this.IconUrl = "https://play-lh.googleusercontent.com/jhmzIodqBLQQUD2sJF_O6oawa04ocDFfQIgoH0rPOXQY3V1uVz0-FJvEieFjVO-kcJ8=w200-h200-rw";
+    this.UdpBroadcastPort = 38899;
+    this.UdpBroadcastAddress = "255.255.255.255";
+    this.UdpListenPort = 38900;
 
 } // End DiscoveryService
 
-// --- WIZ Device Class (Represents a discovered device) ---
+// --- WIZ Device Class ---
 class WIZDevice {
     constructor(id, ip, port) {
-        this.id = id; // MAC address (unique identifier)
+        this.id = id;
         this.ip = ip;
-        this.port = port || 38899; // Default WIZ port if not provided
+        this.port = port || 38899;
         this.lastSeen = Date.now();
-
-        // Flags
-        this.initialized = true; // Initialized in the sense that the object exists
-        this.deviceInfoLoaded = false; // Becomes true after successful getSystemConfig
-        this.announced = false; // Becomes true after service.announceController()
-
-        // Device Info (populated by setDeviceInfo)
+        this.initialized = true;
+        this.deviceInfoLoaded = false;
+        this.announced = false;
         this.homeId = null;
         this.fwVersion = "N/A";
         this.roomId = null;
         this.groupId = null;
-        this.moduleName = "Unknown"; // WIZ internal model name
-        this.modelName = "WIZ Device"; // User-friendly name from library
+        this.moduleName = "Unknown";
+        this.modelName = "WIZ Device";
         this.isRGB = false;
-        this.isTW = false; // Tunable White
-        this.wizType = null; // Reference to WIZDeviceLibrary entry
-
-        service.log(`WIZDevice object created for ${this.id}`);
+        this.isTW = false;
+        this.wizType = null;
+        // service.log(`WIZDevice object created for ${this.id}`); // Less verbose logging
     }
 
     setDeviceInfo(data) {
-        service.log(`Setting device info for ${this.id} from data: ${JSON.stringify(data)}`);
+        // service.log(`Setting device info for ${this.id} from data: ${JSON.stringify(data)}`);
         this.homeId = data.homeId;
         this.fwVersion = data.fwVersion || "N/A";
         this.roomId = data.roomId;
         this.groupId = data.groupId;
         this.moduleName = data.moduleName || "Unknown";
-
-        // Determine capabilities based on moduleName (heuristic)
-        // Prioritize RGB if both keywords are present
         this.isRGB = this.moduleName.includes("RGB");
-        this.isTW = this.moduleName.includes("TW") || this.moduleName.includes("DW"); // DW often means tunable white too
+        this.isTW = this.moduleName.includes("TW") || this.moduleName.includes("DW");
+        if(this.isRGB) { this.isTW = true; }
 
-        // If it's RGB, it usually also supports TW adjustments via RGB channels
-        if(this.isRGB) {
-            this.isTW = true;
-        }
-
-        // Look up in library
         this.wizType = WIZDeviceLibrary[this.moduleName] || WIZDeviceLibrary["default"];
         this.modelName = this.wizType.productName;
 
-        // Update capabilities based on library if more specific
-        if (this.wizType && this.wizType !== WIZDeviceLibrary["default"]) {
-             this.isRGB = this.wizType.supportRGB ?? this.isRGB; // Use library value if defined, else keep detected
+        if (this.wizType !== WIZDeviceLibrary["default"]) {
+             this.isRGB = this.wizType.supportRGB ?? this.isRGB;
              this.isTW = this.wizType.supportWhiteColor ?? this.isTW;
         } else {
-            // Fallback logic if not in library
             if (!this.isRGB && !this.isTW) {
-                // If no keywords found, assume basic dimmable non-color bulb
-                this.isTW = true; // At least allow brightness control
-                service.log(`Module name '${this.moduleName}' not recognized fully, assuming basic Tunable White/Dimmable.`);
+                this.isTW = true;
+                // service.log(`Module name '${this.moduleName}' not recognized, assuming basic TW/Dimmable.`);
             }
         }
 
-
         this.deviceInfoLoaded = true;
-        this.lastSeen = Date.now(); // Update lastSeen when info is set/updated
-        service.log(`Device info processed for ${this.id}: Name=${this.modelName}, RGB=${this.isRGB}, TW=${this.isTW}`);
-
-        // Note: Announcing is handled by the DiscoveryService after this returns
+        this.lastSeen = Date.now();
+        // service.log(`Device info processed for ${this.id}: Name=${this.modelName}, RGB=${this.isRGB}, TW=${this.isTW}`);
     }
-
-    // update() method is no longer needed here, liveness/updates handled by DiscoveryService
 }
 
 // --- WIZ Protocol Handler ---
@@ -518,16 +446,9 @@ class WizProtocol {
         this.ip = ip;
         this.port = port || 38899;
         this.isTwOnly = isTwOnly;
-
-        // Rate limiting state
-        this.lastState = {
-            r: -1, g: -1, b: -1,
-            temp: -1,
-            brightness: -1,
-            power: null // Track power state separately
-        };
+        this.lastState = { r: -1, g: -1, b: -1, temp: -1, brightness: -1, power: null };
         this.lastSendTime = 0;
-        this.minSendInterval = 50; // Milliseconds - throttle commands (WIZ can be overwhelmed)
+        this.minSendInterval = 50; // Throttle commands
     }
 
     _canSend() {
@@ -540,51 +461,36 @@ class WizProtocol {
     }
 
     _sendPilot(params) {
-        if (!this._canSend()) {
-            // device.log("Throttling WIZ command.");
-            return;
-        }
+        if (!this._canSend()) { return; }
         const command = { "method": "setPilot", "params": params };
-        // device.log(`Sending to ${this.ip}:${this.port} -> ${JSON.stringify(command)}`);
+        // Use the device-level udp global here
         udp.send(this.ip, this.port, command);
     }
 
     setPilotRgb(r, g, b, brightness) {
-        // Clamp brightness to WIZ range
         brightness = Math.max(MIN_WIZ_BRIGHTNESS, Math.min(MAX_WIZ_BRIGHTNESS, Math.round(brightness)));
-
         if (this.lastState.r !== r || this.lastState.g !== g || this.lastState.b !== b || this.lastState.brightness !== brightness || this.lastState.power !== true) {
-            // device.log(`Setting RGB: ${r}, ${g}, ${b}, Brightness: ${brightness}`);
             this._sendPilot({ "r": r, "g": g, "b": b, "dimming": brightness, "state": true });
             this.lastState = { r, g, b, brightness, power: true, temp: -1 };
         }
     }
 
     setPilotTw(temperature, brightness) {
-         // Clamp brightness to WIZ range
         brightness = Math.max(MIN_WIZ_BRIGHTNESS, Math.min(MAX_WIZ_BRIGHTNESS, Math.round(brightness)));
-        // Clamp temperature (typical WIZ range is ~2200-6500K)
         temperature = Math.max(2200, Math.min(6500, Math.round(temperature)));
-
          if (this.lastState.temp !== temperature || this.lastState.brightness !== brightness || this.lastState.power !== true) {
-            // device.log(`Setting TW: Temp: ${temperature}, Brightness: ${brightness}`);
             this._sendPilot({ "temp": temperature, "dimming": brightness, "state": true });
              this.lastState = { r: -1, g: -1, b: -1, temp: temperature, brightness, power: true };
          }
     }
 
     setPilotState(isOn) {
-        // device.log(`Setting Power State: ${isOn}`);
         if (this.lastState.power !== isOn) {
             this._sendPilot({ "state": isOn });
-             // Don't clear color state when turning off, allows turning back on to previous color
              this.lastState.power = isOn;
         }
     }
 }
-
-// --- Helper Functions ---
-// (device.hexToRgb is built-in now, no need for custom one)
 
 export function ImageUrl() {
     return "https://play-lh.googleusercontent.com/jhmzIodqBLQQUD2sJF_O6oawa04ocDFfQIgoH0rPOXQY3V1uVz0-FJvEieFjVO-kcJ8=w200-h200-rw";

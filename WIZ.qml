@@ -40,7 +40,6 @@ Item {
                 color: theme.secondarytextcolor
                 textFormat: Text.MarkdownText
                 wrapMode: Text.WrapAtWordBoundaryOrAnywhere
-                // Using list formatting for better readability
                 text: "*   Ensure the WIZ device is powered on.\n" +
                       "*   The device **must** be connected to your **2.4GHz** WiFi network.\n" +
                       "*   Ensure your computer running SignalRGB is on the **same** local network.\n" +
@@ -77,7 +76,7 @@ Item {
                         running: parent.visible
                     }
 
-                    ColumnLayout{
+                    ColumnLayout {
                         spacing: 2
                         Text {
                             color: theme.secondarytextcolor
@@ -149,7 +148,6 @@ Item {
                             Label { text: "Home ID:"; font.weight: Font.DemiBold; color: theme.secondarytextcolor }
                             Label { text: device.homeId ? device.homeId : "N/A"; color: theme.primarytextcolor }
 
-
                             // --- Right Column ---
                             Label { text: "Room ID:"; font.weight: Font.DemiBold; color: theme.secondarytextcolor }
                             Label { text: device.roomId ? device.roomId : "N/A"; color: theme.primarytextcolor }
@@ -157,20 +155,9 @@ Item {
                             Label { text: "Firmware:"; font.weight: Font.DemiBold; color: theme.secondarytextcolor }
                             Label { text: device.fwVersion ? device.fwVersion : "N/A"; color: theme.primarytextcolor }
 
-                             Label { text: "Group ID:"; font.weight: Font.DemiBold; color: theme.secondarytextcolor }
+                            Label { text: "Group ID:"; font.weight: Font.DemiBold; color: theme.secondarytextcolor }
                             Label { text: device.groupId ? device.groupId : "N/A"; color: theme.primarytextcolor }
-
                         }
-
-                        // Status/Warning Area (Optional - can add warnings here if needed)
-                        // Text {
-                        //     Layout.fillWidth: true
-                        //     visible: !device.isRGB && !device.isTW // Example: Warning if type unknown
-                        //     color: theme.warn
-                        //     wrapMode: Text.WrapAtWordBoundaryOrAnywhere
-                        //     text: "Device type could not be fully determined. Control might be limited."
-                        //     font.pixelSize: 12
-                        // }
                     }
                 } // End Frame delegate
             } // End Repeater

@@ -154,15 +154,15 @@ export function DiscoveryService() {
 
         this.broadcastDiscovery();
 
-        // FIX: Use service.setInterval
-        this.discoveryTimer = service.setInterval(() => {
+        // Using global setInterval instead of service.setInterval
+        this.discoveryTimer = setInterval(() => {
             if (this.running) {
                 this.broadcastDiscovery();
             }
         }, BROADCAST_INTERVAL);
 
-        // FIX: Use service.setInterval
-        this.livenessTimer = service.setInterval(() => {
+        // Using global setInterval instead of service.setInterval
+        this.livenessTimer = setInterval(() => {
             if (this.running) {
                 this.checkDeviceLiveness();
             }
@@ -171,7 +171,7 @@ export function DiscoveryService() {
         service.log("WIZ Discovery Service Started.");
     };
 
-    // FIX: Added empty Update function to prevent log spam
+    // Added empty Update function to prevent log spam
     this.Update = function() {
         // Nothing needed here, timers handle periodic tasks
     };
@@ -189,16 +189,16 @@ export function DiscoveryService() {
     this.requestSystemConfig = function(ip) {
          service.log(`Requesting System Config from ${ip}`);
          const configPacket = JSON.stringify({ "method": "getSystemConfig", "id": 1 });
-         // FIX: Use service.send for unicast messages
-         service.send(ip, 38899, configPacket);
+         // Using udp.send instead of service.send for unicast messages
+         udp.send(ip, 38899, configPacket);
     };
 
     this.requestPilot = function(ip) {
-        // service.log(`Requesting Pilot state from ${ip}`);
+        service.log(`Requesting Pilot state from ${ip}`);
         const pilotPacket = JSON.stringify({ "method": "getPilot", "id": 1 });
-        // FIX: Use service.send for unicast messages
-        service.send(ip, 38899, pilotPacket);
-    }
+        // Using udp.send instead of service.send for unicast messages
+        udp.send(ip, 38899, pilotPacket);
+    };
 
     this.checkDeviceLiveness = function() {
         const now = Date.now();
@@ -234,13 +234,13 @@ export function DiscoveryService() {
         service.log("WIZ Discovery Service Shutting Down...");
         this.running = false;
         if (this.discoveryTimer) {
-             // FIX: Use service.stopTimer
-            service.stopTimer(this.discoveryTimer);
+            // Using clearInterval instead of service.stopTimer
+            clearInterval(this.discoveryTimer);
             this.discoveryTimer = null;
         }
         if (this.livenessTimer) {
-             // FIX: Use service.stopTimer
-            service.stopTimer(this.livenessTimer);
+            // Using clearInterval instead of service.stopTimer
+            clearInterval(this.livenessTimer);
             this.livenessTimer = null;
         }
         this.controllers = {};
@@ -297,7 +297,6 @@ export function DiscoveryService() {
              // service.log(`Received ${packet.method} from unknown MAC ${macId}. Ignoring until registered.`);
             return;
         }
-
 
         switch (packet.method) {
             case `registration`:
@@ -478,16 +477,16 @@ class WizProtocol {
     setPilotTw(temperature, brightness) {
         brightness = Math.max(MIN_WIZ_BRIGHTNESS, Math.min(MAX_WIZ_BRIGHTNESS, Math.round(brightness)));
         temperature = Math.max(2200, Math.min(6500, Math.round(temperature)));
-        if (this.lastState.temp !== temperature || this.lastState.brightness !== brightness || this.lastState.power !== true) {
+         if (this.lastState.temp !== temperature || this.lastState.brightness !== brightness || this.lastState.power !== true) {
             this._sendPilot({ "temp": temperature, "dimming": brightness, "state": true });
-            this.lastState = { r: -1, g: -1, b: -1, temp: temperature, brightness, power: true };
-        }
+             this.lastState = { r: -1, g: -1, b: -1, temp: temperature, brightness, power: true };
+         }
     }
 
     setPilotState(isOn) {
         if (this.lastState.power !== isOn) {
             this._sendPilot({ "state": isOn });
-            this.lastState.power = isOn;
+             this.lastState.power = isOn;
         }
     }
 }
